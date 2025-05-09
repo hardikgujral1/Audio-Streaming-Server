@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Audio Streamer</title>
+</head>
+<body>
+  <h2>Stream Song</h2>
+  <input type="text" id="songName" placeholder="Enter song name (e.g., song1.mp3)">
+  <button onclick="playSong()">Play</button>
+  <br><br>
+  <audio id="audioPlayer" controls></audio>
+
+  <script>
+    async function playSong() {
+      const songName = document.getElementById("songName").value;
+
+      const response = await fetch("/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ song_name: songName })
+      });
+
+      if (!response.ok) {
+        alert("Error: " + (await response.text()));
+        return;
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const player = document.getElementById("audioPlayer");
+      player.src = audioUrl;
+      player.play();
+    }
+  </script>
+</body>
+</html>
