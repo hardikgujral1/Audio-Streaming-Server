@@ -1,36 +1,63 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Audio Streamer</title>
 </head>
 <body>
   <h2>Stream Song</h2>
-  <input type="text" id="songName" placeholder="Enter song name (e.g., song1.mp3)">
-  <button onclick="playSong()">Play</button>
+  
+  <!-- Display the list of available songs -->
+  <div>
+    <h3>Available Songs</h3>
+    <ul id="songList">
+      <!-- The songs will be listed here -->
+    </ul>
+  </div>
+  
   <br><br>
   <audio id="audioPlayer" controls></audio>
 
   <script>
-    async function playSong() {
-      const songName = document.getElementById("songName").value;
-
-      const response = await fetch("/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ song_name: songName })
+    // Fetch the list of available songs from the API when the page loads
+    async function fetchSongList() {
+      const response = await fetch("/songs");
+      if (!response.ok) {
+        alert("Error: " + (await response.text()));
+        return;
+      }
+      
+      const songList = await response.json();
+      const songListContainer = document.getElementById("songList");
+      
+      songListContainer.innerHTML = ""; // Clear the list before adding new items
+      songList.forEach(song => {
+        const listItem = document.createElement("li");
+        listItem.textContent = song;
+        listItem.style.cursor = "pointer";
+        listItem.onclick = () => playSong(song);
+        songListContainer.appendChild(listItem);
       });
+    }
 
+    // Play the selected song
+    async function playSong(songName) {
+      const response = await fetch(`/stream/${songName}`);
+      
       if (!response.ok) {
         alert("Error: " + (await response.text()));
         return;
       }
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
+      const { stream_url } = await response.json();
       const player = document.getElementById("audioPlayer");
-      player.src = audioUrl;
+      player.src = stream_url;  // Set the S3 pre-signed URL as the source
       player.play();
     }
+
+    // Load the song list when the page is ready
+    window.onload = fetchSongList;
   </script>
 </body>
 </html>
