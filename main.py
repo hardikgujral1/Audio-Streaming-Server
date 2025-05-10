@@ -6,7 +6,6 @@ import boto3
 from botocore.exceptions import NoCredentialsError
 from datetime import datetime, timedelta
 from botocore import client
-import requests
 import os
 
 app = FastAPI(description="Audio Streaming Server")
