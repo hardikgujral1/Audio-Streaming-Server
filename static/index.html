@@ -19,7 +19,7 @@
   <audio id="audioPlayer" controls></audio>
 
   <script>
-    const ws = new WebSocket(`ws://${location.host}/ws`);
+    const ws = new WebSocket(`wss://${location.host}/ws`);
     let currentSong = null;
     let playTime = null;
 
