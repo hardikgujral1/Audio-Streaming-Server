@@ -1,17 +1,26 @@
 import os
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import boto3
 from botocore.exceptions import NoCredentialsError
 from datetime import datetime, timedelta
-from botocore import client
 import os
+import time
+import json
+
+
+connections = []
 
 app = FastAPI(description="Audio Streaming Server")
 
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 s3 = boto3.client('s3', endpoint_url="https://s3.ap-south-1.amazonaws.com",region_name = "ap-south-1",aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"))
+
+
+
+
 
 
 @app.get("/health")
@@ -65,3 +74,44 @@ def generate_presigned_url(bucket,key):
         ExpiresIn=30 # one hour in seconds, increase if needed
     )
     return url
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    # Accept connection
+    await websocket.accept()
+    connections.append(websocket)
+    try:
+        while True:
+            # Receive message
+            data = await websocket.receive_text()
+            data = json.loads(data)
+            event = data.get("event")
+
+            if event == "load":
+                song = data.get("song")
+                # Broadcast load event to all clients
+                broadcast_data = {
+                    "event": "load",
+                    "song": song,
+                    "timestamp": time.time()
+                }
+                for conn in connections:
+                    await conn.send_text(json.dumps(broadcast_data))
+
+            elif event == "play":
+                # Broadcast play event to all clients with corrected timestamp
+                broadcast_data = {
+                    "event": "play",
+                    "timestamp": time.time()  # Corrected timestamp
+                }
+                for conn in connections:
+                    await conn.send_text(json.dumps(broadcast_data))
+    
+    except WebSocketDisconnect:
+        # Remove disconnected client
+        connections.remove(websocket)
+
+@app.get("/time")
+def get_server_time():
+    return {"server_time": int(datetime.utcnow().timestamp() * 1000)}  # in ms
