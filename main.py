@@ -101,14 +101,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif event == "play":
                 buffer_seconds = 3
-                current_time_ms = int(time.time() * 1000)
-                play_at = current_time_ms + buffer_seconds * 1000  # future timestamp
-            
+                play_at = int(time.time() * 1000) + (buffer_seconds * 1000)
+
                 broadcast_data = {
                     "event": "play",
                     "play_at": play_at  # in milliseconds
                 }
-            
+
                 for conn in connections:
                     await conn.send_text(json.dumps(broadcast_data))
 
