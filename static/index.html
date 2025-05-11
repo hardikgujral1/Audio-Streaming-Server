@@ -15,50 +15,42 @@
   <audio id="audioPlayer" controls></audio>
 
   <script>
-    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-    let serverOffset = 0; // in ms
-    let currentSong = null;
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+  let currentSong = null;
 
-    async function syncServerTime() {
-      const clientSend = Date.now();
-      const res = await fetch('/time');
-      const serverTime = await res.text();
-      const clientRecv = Date.now();
-      const rtt = clientRecv - clientSend;
-      serverOffset = parseInt(serverTime) - (clientSend + rtt / 2);
-      console.log("Time sync complete. Offset:", serverOffset, "ms");
+  // Event when sync signal is received
+  ws.onmessage = async (event) => {
+    const data = JSON.parse(event.data);
+    const player = document.getElementById("audioPlayer");
+
+    if (data.event === "sync") {
+      const serverSyncTime = data.sync_time;
+      const clientLocalTime = Date.now();
+      const delay = serverSyncTime - clientLocalTime;
+
+      // If delay is negative, means it's already the time, play immediately
+      if (delay < 0) {
+        player.play();
+      } else {
+        console.log("Scheduling play in", delay, "ms");
+        setTimeout(() => {
+          player.play();
+        }, delay);
+      }
     }
 
-    ws.onmessage = async (event) => {
-      const data = JSON.parse(event.data);
-      const player = document.getElementById("audioPlayer");
+    if (data.event === "load") {
+      currentSong = data.song;
+      const res = await fetch(`/stream/${currentSong}`);
+      const { stream_url } = await res.json();
+      player.src = stream_url;
+      player.load();
+    }
+  };
 
-      if (data.event === "load") {
-        currentSong = data.song;
-        const res = await fetch(`/stream/${currentSong}`);
-        const { stream_url } = await res.json();
-        player.src = stream_url;
-        player.load();
-        console.log("Loaded song:", currentSong);
-      }
-
-      if (data.event === "play_at") {
-        const targetPlayTime = data.timestamp + serverOffset; // Adjusted local timestamp
-        const delay = targetPlayTime - Date.now();
-
-        if (delay < 0) {
-          console.warn("Missed sync, playing immediately");
-          player.play();
-        } else {
-          console.log("Scheduled to play in", delay, "ms");
-          setTimeout(() => {
-            player.play();
-          }, delay);
-        }
-      }
-    };
-
-    async function fetchSongList() {
+  // Fetch available songs from the backend
+  async function fetchSongList() {
+    try {
       const response = await fetch("/songs");
       const songList = await response.json();
       const container = document.getElementById("songList");
@@ -70,26 +62,27 @@
         item.onclick = () => sendLoadSong(song);
         container.appendChild(item);
       });
+    } catch (error) {
+      console.error("Error fetching songs:", error);
     }
+  }
 
-    function sendLoadSong(song) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ event: "load", song }));
-      }
+  function sendLoadSong(song) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ event: "load", song }));
     }
+  }
 
-    function sendPlaySignal() {
-      if (ws.readyState === WebSocket.OPEN) {
-        const serverNow = Date.now() - serverOffset;
-        const playAt = serverNow + 3000; // schedule 3 seconds later
-        ws.send(JSON.stringify({ event: "play_at", timestamp: playAt }));
-      }
+  function sendPlaySignal() {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ event: "play" }));
     }
+  }
 
-    window.onload = async () => {
-      await syncServerTime();
-      await fetchSongList();
-    }
+  // On page load, fetch the song list
+  window.onload = async () => {
+    await fetchSongList();
+  };
   </script>
 </body>
 </html>

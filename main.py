@@ -78,42 +78,34 @@ def generate_presigned_url(bucket,key):
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Accept connection
     await websocket.accept()
     connections.append(websocket)
     try:
         while True:
-            # Receive message
             data = await websocket.receive_text()
             data = json.loads(data)
             event = data.get("event")
 
-            if event == "load":
+            if event == "play":
+                # Send sync signal to all clients
+                sync_time = int(time.time() * 1000)  # Reference time in milliseconds
+                broadcast_data = {
+                    "event": "sync",
+                    "sync_time": sync_time  # Reference time to sync playback
+                }
+                for conn in connections:
+                    await conn.send_text(json.dumps(broadcast_data))
+
+            elif event == "load":
                 song = data.get("song")
-                # Broadcast load event to all clients
                 broadcast_data = {
                     "event": "load",
-                    "song": song,
-                    "timestamp": time.time()
+                    "song": song
                 }
                 for conn in connections:
                     await conn.send_text(json.dumps(broadcast_data))
 
-            elif event == "play":
-                buffer_seconds = 3
-                play_at = int(time.time() * 1000) + (buffer_seconds * 1000)
-
-                broadcast_data = {
-                    "event": "play",
-                    "play_at": play_at  # in milliseconds
-                }
-
-                for conn in connections:
-                    await conn.send_text(json.dumps(broadcast_data))
-
-    
     except WebSocketDisconnect:
-        # Remove disconnected client
         connections.remove(websocket)
 
 @app.get("/time")
