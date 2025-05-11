@@ -3,53 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Audio Sync Streamer</title>
+  <title>Accurate Audio Sync</title>
 </head>
 <body>
-  <h2>Sync Audio Stream</h2>
-  
-  <!-- Display the list of available songs -->
+  <h2>Accurate Audio Sync</h2>
   <div>
     <h3>Available Songs</h3>
     <ul id="songList"></ul>
   </div>
-
-  <br><br>
   <button onclick="sendPlaySignal()">Play for all</button>
   <audio id="audioPlayer" controls></audio>
 
   <script>
-    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    let serverOffset = 0; // in ms
     let currentSong = null;
-    let playTime = null;
 
-    ws.onmessage = function(event) {
+    async function syncServerTime() {
+      const clientSend = Date.now();
+      const res = await fetch('/time');
+      const serverTime = await res.text();
+      const clientRecv = Date.now();
+      const rtt = clientRecv - clientSend;
+      serverOffset = parseInt(serverTime) - (clientSend + rtt / 2);
+      console.log("Time sync complete. Offset:", serverOffset, "ms");
+    }
+
+    ws.onmessage = async (event) => {
       const data = JSON.parse(event.data);
       const player = document.getElementById("audioPlayer");
 
       if (data.event === "load") {
         currentSong = data.song;
-        const res = fetch(`/stream/${currentSong}`)
-          .then(response => response.json())
-          .then(data => {
-            player.src = data.stream_url;
-            player.pause(); // Load but don't play yet
-            console.log("Song loaded, waiting for play signal");
-          });
+        const res = await fetch(`/stream/${currentSong}`);
+        const { stream_url } = await res.json();
+        player.src = stream_url;
+        player.load();
+        console.log("Loaded song:", currentSong);
       }
 
-      if (data.event === "play") {
-        playTime = data.timestamp;
-        console.log("Play signal received at timestamp: " + playTime);
-        const delay = playTime - Date.now() / 1000; // Calculate delay in seconds
-        setTimeout(() => {
-          if (player.src) {
+      if (data.event === "play_at") {
+        const targetPlayTime = data.timestamp + serverOffset; // Adjusted local timestamp
+        const delay = targetPlayTime - Date.now();
+
+        if (delay < 0) {
+          console.warn("Missed sync, playing immediately");
+          player.play();
+        } else {
+          console.log("Scheduled to play in", delay, "ms");
+          setTimeout(() => {
             player.play();
-            console.log("Playing song at the correct time");
-          }
-        }, delay * 1000);
+          }, delay);
+        }
       }
     };
+
+    async function fetchSongList() {
+      const response = await fetch("/songs");
+      const songList = await response.json();
+      const container = document.getElementById("songList");
+      container.innerHTML = "";
+      songList.forEach(song => {
+        const item = document.createElement("li");
+        item.textContent = song;
+        item.style.cursor = "pointer";
+        item.onclick = () => sendLoadSong(song);
+        container.appendChild(item);
+      });
+    }
 
     function sendLoadSong(song) {
       if (ws.readyState === WebSocket.OPEN) {
@@ -59,26 +80,16 @@
 
     function sendPlaySignal() {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ event: "play" }));
+        const serverNow = Date.now() - serverOffset;
+        const playAt = serverNow + 3000; // schedule 3 seconds later
+        ws.send(JSON.stringify({ event: "play_at", timestamp: playAt }));
       }
     }
 
-    // Fetch available songs
-    async function fetchSongList() {
-      const response = await fetch("/songs");
-      const songList = await response.json();
-      const songListContainer = document.getElementById("songList");
-
-      songList.forEach(song => {
-        const listItem = document.createElement("li");
-        listItem.textContent = song;
-        listItem.style.cursor = "pointer";
-        listItem.onclick = () => sendLoadSong(song);
-        songListContainer.appendChild(listItem);
-      });
+    window.onload = async () => {
+      await syncServerTime();
+      await fetchSongList();
     }
-
-    window.onload = fetchSongList;
   </script>
 </body>
 </html>

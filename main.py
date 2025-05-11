@@ -100,13 +100,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     await conn.send_text(json.dumps(broadcast_data))
 
             elif event == "play":
-                # Broadcast play event to all clients with corrected timestamp
+                buffer_seconds = 3
+                current_time_ms = int(time.time() * 1000)
+                play_at = current_time_ms + buffer_seconds * 1000  # future timestamp
+            
                 broadcast_data = {
                     "event": "play",
-                    "timestamp": time.time()  # Corrected timestamp
+                    "play_at": play_at  # in milliseconds
                 }
+            
                 for conn in connections:
                     await conn.send_text(json.dumps(broadcast_data))
+
     
     except WebSocketDisconnect:
         # Remove disconnected client
